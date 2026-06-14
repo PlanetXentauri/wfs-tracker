@@ -84,8 +84,13 @@
   .prod.zero{border-left-color:var(--red)}
   .prod:hover{border-color:var(--line2)}
   .prod-head{display:flex;align-items:center;gap:13px;padding:14px 15px;cursor:pointer}
-  .ico{flex:none;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);font-size:19px}
+  .ico{flex:none;width:56px;height:56px;border-radius:11px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);font-size:26px;cursor:pointer;overflow:hidden}
+  .ico.haspic{background:#fff}
+  .ico.haspic img{width:100%;height:100%;object-fit:contain;display:block}
   .prod.zero .ico{background:var(--red-soft);color:var(--red)}
+  .prod.zero .ico.haspic{background:#fff}
+  .prodpic{margin:12px 0 2px}
+  .prodpic img{max-width:200px;max-height:200px;width:auto;height:auto;border-radius:10px;border:1px solid var(--line);background:#fff;display:block;padding:4px}
   .pinfo{flex:1;min-width:0}
   .pname{font-weight:600;font-size:16px;letter-spacing:-.01em}
   .psub{font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
@@ -470,7 +475,7 @@ function productCard(p){
   const obsBadge = fsReady ? '<span class="badge obs">◇ Folder</span>' : '';
   el.innerHTML = `
     <div class="prod-head">
-      <span class="ico">🔋</span>
+      <span class="${p.image?'ico haspic':'ico'}" data-ico title="${p.image?'Click to change product photo':'Click to upload a product photo'}">${p.image?`<img src="${esc(p.image)}" alt="">`:'🔋'}</span>
       <div class="pinfo">
         <div class="pname">${esc(p.name)}</div>
         <div class="psub"><span class="badge">${esc(p.status||'Published')}</span>${obsBadge}<span>${esc(p.brand||'')}</span><span>SKU ${esc(p.sku||'')}</span></div>
@@ -502,9 +507,15 @@ function productCard(p){
         <div class="kv"><span class="k">KM units · revenue</span><span class="vv">${esc(p.kmunits||'—')} · $${esc(p.kmrevenue||'—')}</span></div>
         <div class="kv"><span class="k">Walmart listing</span><span class="vv">${p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener">Open ↗</a>`:'—'}</span></div>
       </div>
+      ${p.image?`<div class="prodpic"><img src="${esc(p.image)}" alt="${esc(p.name)}"></div>`:''}
       <label class="kv"><span class="k">Notes</span></label>
       <textarea class="note-area" data-f="notes" placeholder="Notes…">${esc(p.notes||'')}</textarea>
-      <div class="panel-act"><button class="smallbtn" data-del>Delete product</button></div>
+      <div class="panel-act">
+        <button class="smallbtn" data-photo>${p.image?'Change photo':'Upload photo'}</button>
+        ${p.image?'<button class="smallbtn" data-rmphoto>Remove photo</button>':''}
+        <button class="smallbtn" data-del>Delete product</button>
+        <input type="file" accept="image/*" data-photofile hidden>
+      </div>
     </div>`;
 
   // expand toggle (ignore clicks on inputs)
@@ -544,6 +555,18 @@ function productCard(p){
       state.products = state.products.filter(x => x.id!==p.id); save(); render();
     }
   });
+
+  // product photo
+  const fileInp = el.querySelector('[data-photofile]');
+  const icoEl = el.querySelector('[data-ico]');
+  if(icoEl) icoEl.addEventListener('click', e => { e.stopPropagation(); if(fileInp) fileInp.click(); });
+  const photoBtn = el.querySelector('[data-photo]'); if(photoBtn) photoBtn.addEventListener('click', () => fileInp && fileInp.click());
+  if(fileInp) fileInp.addEventListener('change', () => {
+    const f = fileInp.files[0]; if(!f) return;
+    resizeImage(f, 240, url => { if(!url){ toast('Could not read that image'); return; } p.image=url; save(); render(); toast('Photo added'); });
+    fileInp.value='';
+  });
+  const rmBtn = el.querySelector('[data-rmphoto]'); if(rmBtn) rmBtn.addEventListener('click', () => { delete p.image; save(); render(); toast('Photo removed'); });
   return el;
 }
 
@@ -622,6 +645,23 @@ function toast(msg){
 
 /* ---------- helpers ---------- */
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* downscale an uploaded image to a small JPEG data URL so it stays light to store & sync */
+function resizeImage(file, maxDim, cb){
+  const r = new FileReader();
+  r.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      let w=img.width, h=img.height;
+      const s = Math.min(1, maxDim/Math.max(w,h));
+      w=Math.round(w*s); h=Math.round(h*s);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+      try { cb(c.toDataURL('image/jpeg',0.82)); } catch(e){ cb(null); }
+    };
+    img.onerror=()=>cb(null); img.src=r.result;
+  };
+  r.onerror=()=>cb(null); r.readAsDataURL(file);
+}
 
 /* ---------- controls wiring ---------- */
 document.getElementById('q').addEventListener('input', e => { query = e.target.value; render(); });
