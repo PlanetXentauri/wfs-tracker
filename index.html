@@ -408,7 +408,8 @@ function countdown(ms){
 let query = '';
 function render(){
   const q = query.trim().toLowerCase();
-  const prods = state.products.filter(p => !q || (p.name+' '+p.sku+' '+p.brand).toLowerCase().includes(q));
+  const prods = state.products.filter(p => !q || (p.name+' '+p.sku+' '+p.brand).toLowerCase().includes(q))
+    .sort((a,b) => (Number(b.qty)||0) - (Number(a.qty)||0));   // always highest qty on hand first
 
   /* products */
   const pl = document.getElementById('prod-list');
