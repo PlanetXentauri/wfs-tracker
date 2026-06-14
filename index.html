@@ -264,7 +264,7 @@
 
 <footer>
   <div class="wrap">
-    Profit = <b>sale price × qty × margin %</b>. A shipment's qty leaves on-hand inventory only when its 7-day timer hits zero, then its profit banks into <b>Realized</b>. Timers reconcile when the page opens and tick live while open. <b>◇ Connect folder</b> (Chrome / Edge / Brave) to auto-save every change into <b>centauri-wfs-data.json</b> inside your Obsidian publish folder, then pull product notes with <b>Sync new</b> (adds missing SKUs) or <b>Sync all</b> (refreshes every product). <b>Export</b> still works anywhere for manual backups.
+    Profit = <b>sale price × qty × margin %</b>. Sending units to WFS removes them from <b>on-hand</b> immediately (they're now in transit); when the 7-day timer hits zero their profit banks into <b>Realized</b>. Cancel a shipment to return its units to on-hand. Timers reconcile when the page opens and tick live while open. <b>◇ Connect folder</b> (Chrome / Edge / Brave) to auto-save every change into <b>centauri-wfs-data.json</b> inside your Obsidian publish folder, then pull product notes with <b>Sync new</b> (adds missing SKUs) or <b>Sync all</b> (refreshes every product). <b>Export</b> still works anywhere for manual backups.
   </div>
 </footer>
 
@@ -341,14 +341,26 @@ const estProfit = p => (Number(p.price)||0) * (Number(p.qty)||0) * ((Number(p.ma
 const liveFor   = pid => state.shipments.filter(s => s.productId===pid && s.status==='live');
 const committed = pid => liveFor(pid).reduce((a,s)=>a + s.qty, 0);
 
+/* ---------- one-time migration: on-hand now drops at send-time ----------
+   Older data created live shipments WITHOUT reducing on-hand qty. Subtract
+   each product's in-flight (live) units from its qty once, so on-hand reflects
+   only what's physically still on the shelf. Flag prevents double-applying. */
+function migrateSendModel(){
+  if(state.sendModelV2) return;
+  state.products.forEach(p => {
+    const c = committed(p.id);
+    if(c>0) p.qty = Math.max(0, (Number(p.qty)||0) - c);
+  });
+  state.sendModelV2 = true;
+}
+
 /* ---------- reconcile expired shipments ---------- */
 function reconcile(){
   let changed = false, banked = 0, msgs = [];
   state.shipments.forEach(s => {
     if(s.status==='live' && now() >= s.expiresAt){
       s.status = 'completed'; s.completedAt = now();
-      const p = state.products.find(x => x.id===s.productId);
-      if(p && !OBSIDIAN_OWNS_QTY){ p.qty = Math.max(0, (Number(p.qty)||0) - s.qty); }
+      // qty already left on-hand when the units were sent; just bank the profit here.
       banked += s.totalProfit; changed = true;
       msgs.push(`${s.qty}× ${s.name} received — ${fmtMoney(s.totalProfit)} banked`);
     }
@@ -430,7 +442,7 @@ function paintStats(){
 function productCard(p){
   const el = document.createElement('div');
   el.className = 'prod' + ((Number(p.qty)||0)<=0 ? ' zero' : '');
-  const avail = (Number(p.qty)||0) - committed(p.id);
+  const avail = Number(p.qty)||0;     // on-hand IS what's available; sent units already left
   const ro  = '';
   const roq = '';
   const obsBadge = fsReady ? '<span class="badge obs">◇ Folder</span>' : '';
@@ -486,7 +498,7 @@ function productCard(p){
       el.querySelector('[data-profit2]').textContent = ep;
       el.classList.toggle('zero',(Number(p.qty)||0)<=0);
       // refresh avail/send cap
-      const av = (Number(p.qty)||0) - committed(p.id);
+      const av = Number(p.qty)||0;
       el.querySelector('.avail').textContent = 'Avail ' + av;
       const sb = el.querySelector('[data-sendbtn]'); const si = el.querySelector('[data-send]');
       sb.disabled = av<=0; si.max = Math.max(0,av);
@@ -499,7 +511,7 @@ function productCard(p){
   sendBtn.addEventListener('click', () => {
     const si = el.querySelector('[data-send]');
     const n = Math.floor(Number(si.value));
-    const av = (Number(p.qty)||0) - committed(p.id);
+    const av = Number(p.qty)||0;
     if(!n || n<1){ si.focus(); return; }
     if(n > av){ toast(`Only ${av} available to send`); return; }
     sendToWFS(p, n); si.value='';
@@ -540,7 +552,9 @@ function shipCard(s){
     s.expiresAt = now(); reconcile(); render();
   });
   el.querySelector('[data-cancel]').addEventListener('click', () => {
-    if(confirm(`Cancel this shipment of ${s.qty}× ${s.name}? Units stay on-hand; nothing is banked.`)){
+    if(confirm(`Cancel this shipment of ${s.qty}× ${s.name}? The ${s.qty} units return to on-hand; nothing is banked.`)){
+      const p = state.products.find(x => x.id===s.productId);
+      if(p) p.qty = (Number(p.qty)||0) + s.qty;     // give the units back to on-hand
       state.shipments = state.shipments.filter(x => x.id!==s.id); save(); render();
     }
   });
@@ -558,6 +572,7 @@ function sendToWFS(p, qty){
     qty, unitPrice, marginPct, unitProfit, totalProfit: unitProfit*qty,
     sentAt, expiresAt: sentAt + WINDOW, status: 'live'
   });
+  p.qty = Math.max(0, (Number(p.qty)||0) - qty);   // units leave on-hand the moment they ship
   save(); render();
   toast(`Sent ${qty}× ${p.name} to WFS — ${WINDOW<DAY?'1-min':'7-day'} clock started`);
 }
@@ -735,7 +750,7 @@ async function loadFromFolder(){
       state = {products:s.products, shipments:s.shipments||[], lastSync:s.lastSync};
       state.products.forEach(p=>p.id ||= uid());
       state.shipments.forEach(x=>x.id ||= uid());
-      reconcile(); Store.set(KEY, JSON.stringify(state));
+      reconcile(); migrateSendModel(); Store.set(KEY, JSON.stringify(state));
     }
   } catch(e){ /* no data file yet — fine, we'll create one */ }
 }
@@ -829,6 +844,8 @@ function paintFs(){
 
 /* ---------- boot ---------- */
 reconcile();
+migrateSendModel();
+save();
 paintSync();
 render();
 restoreFolder();
