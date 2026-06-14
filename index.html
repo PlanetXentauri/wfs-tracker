@@ -213,6 +213,7 @@
       </span>
       <button class="tbtn" id="importbtn">Import</button>
       <button class="tbtn" id="exportbtn">Export</button>
+      <button class="tbtn" id="cloudbtn" title="Two-way sync across devices (phone + desktop) via Firebase">☁ Cloud</button>
     </div>
     <span class="timermode">Timer
       <select id="timermode" title="Shipment window length">
@@ -245,6 +246,24 @@
     </div>
   </div>
 
+  <div class="addform" id="cloudform">
+    <div style="font-family:'Archivo',sans-serif;font-weight:900;font-size:15px;margin-bottom:4px">☁ Cloud sync — phone &amp; desktop</div>
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 12px;max-width:70ch">Paste your Firebase config below and pick a <b>Sync code</b>. Enter the <b>same config and same code</b> on every device (phone included) and they stay in sync live. The sync code is a shared secret — keep it private.</p>
+    <div class="fld" style="margin-bottom:10px"><label>Firebase config</label>
+      <textarea id="c-config" class="note-area" style="min-height:130px;font-family:var(--mono);font-size:12px" placeholder="Paste the whole firebaseConfig object from your Firebase project settings, e.g. { apiKey: &quot;…&quot;, projectId: &quot;…&quot;, … }"></textarea>
+    </div>
+    <div class="row">
+      <div class="fld" style="flex:1;min-width:200px"><label>Sync code (shared secret)</label><input id="c-code" placeholder="leave blank to auto-generate"></div>
+    </div>
+    <div class="act">
+      <button class="tbtn go" id="c-connect">Connect</button>
+      <button class="tbtn" id="c-copy">Copy code</button>
+      <button class="tbtn" id="c-disconnect">Disconnect</button>
+      <button class="tbtn" id="c-cancel">Close</button>
+    </div>
+    <div id="c-status" style="margin-top:10px;font-size:12.5px;color:var(--muted)"></div>
+  </div>
+
   <section class="sec" id="sec-prod">
     <div class="sec-head"><span class="sec-tag prod">Published</span><h2>Products</h2><span class="n" id="prod-n"></span></div>
     <div id="prod-list"></div>
@@ -270,6 +289,9 @@
 
 <div id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
 /* ---------- storage (works on GitHub Pages; degrades safely elsewhere) ---------- */
 const Store = (() => {
@@ -329,7 +351,7 @@ function load(){
   catch(e){}
   return JSON.parse(JSON.stringify(SEED));
 }
-function save(){ state.lastSync = now(); Store.set(KEY, JSON.stringify(state)); scheduleWrite(); paintSync(); }
+function save(){ state.lastSync = now(); Store.set(KEY, JSON.stringify(state)); scheduleWrite(); scheduleCloudWrite(); paintSync(); }
 function paintSync(){
   const t = state.lastSync ? new Date(state.lastSync) : new Date();
   const base = (Store.persistent ? 'Saved ' : 'Session ') + t.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
@@ -842,6 +864,101 @@ function paintFs(){
   else { b.textContent='◇ Connect folder'; b.classList.remove('go'); if(sn) sn.style.display='none'; }
 }
 
+/* =====================================================================
+   Cloud sync (Firebase Firestore) — works on phone AND desktop
+   ===================================================================== */
+const CLOUD_CFG_KEY='centauri_cloud_cfg', CLOUD_CODE_KEY='centauri_cloud_code';
+let cloudReady=false, cloudDoc=null, cloudUnsub=null, cloudWriteTimer=null, applyingRemote=false;
+const clientId = uid();
+
+function parseConfig(text){           // accept full snippet or bare object; keys may be unquoted
+  const a=text.indexOf('{'), b=text.lastIndexOf('}');
+  if(a<0||b<0) return null;
+  try { return (new Function('return (' + text.slice(a,b+1) + ')'))(); } catch(e){ return null; }
+}
+function genCode(){ return (uid()+uid()+uid()).replace(/[^a-z0-9]/gi,'').slice(0,24); }
+
+function scheduleCloudWrite(){
+  if(!cloudReady || applyingRemote) return;
+  clearTimeout(cloudWriteTimer);
+  cloudWriteTimer=setTimeout(cloudPush, 600);
+}
+async function cloudPush(){
+  if(!cloudReady || !cloudDoc) return;
+  try { await cloudDoc.set({ state: JSON.stringify(state), updatedAt: Date.now(), origin: clientId }); }
+  catch(e){ console.warn('cloud push failed', e); cloudStatus('Push failed: '+(e&&e.message||e)); }
+}
+function applyRemote(d){
+  if(!d || !d.state || d.origin===clientId) return;     // ignore empty + our own echo
+  let s; try { s=JSON.parse(d.state); } catch(e){ return; }
+  if(!s || !Array.isArray(s.products)) return;
+  applyingRemote=true;
+  state={products:s.products, shipments:s.shipments||[], lastSync:s.lastSync, sendModelV2:s.sendModelV2};
+  state.products.forEach(p=>p.id ||= uid()); state.shipments.forEach(x=>x.id ||= uid());
+  reconcile(); migrateSendModel();
+  Store.set(KEY, JSON.stringify(state));
+  if(fsReady) writeData();
+  render(); paintCloud();
+  applyingRemote=false;
+}
+async function cloudConnect(cfg, code, opts={}){
+  if(typeof firebase==='undefined'){ cloudStatus('Firebase library didn’t load (offline?)'); return false; }
+  try {
+    if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(cfg);
+    await firebase.auth().signInAnonymously();
+    cloudDoc = firebase.firestore().collection('trackers').doc(code);
+    const snap = await cloudDoc.get();
+    cloudReady = true;
+    if(snap.exists && snap.data() && snap.data().state){ applyRemote(snap.data()); }  // pull existing
+    else { await cloudPush(); }                                                       // seed it
+    if(cloudUnsub) cloudUnsub();
+    cloudUnsub = cloudDoc.onSnapshot(s => { if(s.exists) applyRemote(s.data()); });
+    Store.set(CLOUD_CFG_KEY, JSON.stringify(cfg)); Store.set(CLOUD_CODE_KEY, code);
+    paintCloud(); cloudStatus('Connected · syncing as code “'+code+'”');
+    if(!opts.silent) toast('Cloud sync on');
+    return true;
+  } catch(e){ cloudReady=false; cloudStatus('Connect failed: '+(e&&e.message||e)); return false; }
+}
+function cloudDisconnect(){
+  if(cloudUnsub) cloudUnsub(); cloudUnsub=null; cloudReady=false; cloudDoc=null;
+  Store.set(CLOUD_CFG_KEY,''); Store.set(CLOUD_CODE_KEY,'');
+  paintCloud(); cloudStatus('Disconnected. This device no longer syncs.');
+}
+function cloudStatus(msg){ const el=document.getElementById('c-status'); if(el) el.textContent=msg; }
+function paintCloud(){
+  const b=document.getElementById('cloudbtn'); if(!b) return;
+  if(cloudReady){ b.textContent='☁ Cloud on'; b.classList.add('go'); }
+  else { b.textContent='☁ Cloud'; b.classList.remove('go'); }
+}
+function cloudBoot(){
+  const cfgRaw=Store.get(CLOUD_CFG_KEY), code=Store.get(CLOUD_CODE_KEY);
+  if(cfgRaw && code){ try { cloudConnect(JSON.parse(cfgRaw), code, {silent:true}); } catch(e){} }
+}
+
+/* cloud UI wiring */
+const cloudform=document.getElementById('cloudform');
+document.getElementById('cloudbtn').addEventListener('click', ()=>{
+  const cfg=Store.get(CLOUD_CFG_KEY), code=Store.get(CLOUD_CODE_KEY);
+  if(cfg) document.getElementById('c-config').value=cfg;
+  document.getElementById('c-code').value = code || '';
+  cloudform.classList.toggle('open');
+  if(cloudReady) cloudStatus('Connected · syncing as code “'+(code||'')+'”');
+});
+document.getElementById('c-cancel').addEventListener('click', ()=> cloudform.classList.remove('open'));
+document.getElementById('c-disconnect').addEventListener('click', cloudDisconnect);
+document.getElementById('c-copy').addEventListener('click', ()=>{
+  const code=document.getElementById('c-code').value.trim();
+  if(code && navigator.clipboard){ navigator.clipboard.writeText(code); toast('Sync code copied'); }
+});
+document.getElementById('c-connect').addEventListener('click', async ()=>{
+  const cfg=parseConfig(document.getElementById('c-config').value);
+  if(!cfg || !cfg.projectId){ cloudStatus('That config doesn’t look right — paste the whole firebaseConfig object (must include projectId).'); return; }
+  let code=document.getElementById('c-code').value.trim();
+  if(!code){ code=genCode(); document.getElementById('c-code').value=code; }
+  cloudStatus('Connecting…');
+  await cloudConnect(cfg, code);
+});
+
 /* ---------- boot ---------- */
 reconcile();
 migrateSendModel();
@@ -849,6 +966,7 @@ save();
 paintSync();
 render();
 restoreFolder();
+cloudBoot();
 </script>
 </body>
 </html>
