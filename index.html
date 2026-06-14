@@ -291,7 +291,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
 /* ---------- storage (works on GitHub Pages; degrades safely elsewhere) ---------- */
 const Store = (() => {
@@ -906,13 +906,15 @@ async function cloudConnect(cfg, code, opts={}){
   try {
     if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(cfg);
     await firebase.auth().signInAnonymously();
-    cloudDoc = firebase.firestore().collection('trackers').doc(code);
-    const snap = await cloudDoc.get();
+    cloudDoc = firebase.database().ref('trackers/' + code);
     cloudReady = true;
-    if(snap.exists && snap.data() && snap.data().state){ applyRemote(snap.data()); }  // pull existing
-    else { await cloudPush(); }                                                       // seed it
+    const snap = await cloudDoc.once('value');
+    const val = snap && snap.val ? snap.val() : null;
+    if(val && val.state){ applyRemote(val); }    // pull existing
+    else { await cloudPush(); }                  // seed it
     if(cloudUnsub) cloudUnsub();
-    cloudUnsub = cloudDoc.onSnapshot(s => { if(s.exists) applyRemote(s.data()); });
+    const handler = cloudDoc.on('value', s => { const v=s.val(); if(v) applyRemote(v); });
+    cloudUnsub = () => cloudDoc.off('value', handler);
     Store.set(CLOUD_CFG_KEY, JSON.stringify(cfg)); Store.set(CLOUD_CODE_KEY, code);
     paintCloud(); cloudStatus('Connected · syncing as code “'+code+'”');
     if(!opts.silent) toast('Cloud sync on');
@@ -953,6 +955,7 @@ document.getElementById('c-copy').addEventListener('click', ()=>{
 document.getElementById('c-connect').addEventListener('click', async ()=>{
   const cfg=parseConfig(document.getElementById('c-config').value);
   if(!cfg || !cfg.projectId){ cloudStatus('That config doesn’t look right — paste the whole firebaseConfig object (must include projectId).'); return; }
+  if(!cfg.databaseURL){ cloudStatus('Config is missing databaseURL. Create the Realtime Database first, then re-copy your config from Project settings.'); return; }
   let code=document.getElementById('c-code').value.trim();
   if(!code){ code=genCode(); document.getElementById('c-code').value=code; }
   cloudStatus('Connecting…');
