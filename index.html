@@ -103,6 +103,8 @@
   .psub{font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
   .psub .sku{font-weight:700;color:#FFC93C}
   .estsales-v{font-style:italic;color:var(--violet)}
+  .psales{margin-top:5px;display:inline-block;font-size:12px;font-weight:600;color:#9CC4FF;background:var(--blue-soft);border:1px solid #2A4569;padding:2px 9px;border-radius:6px}
+  .psales b{color:#CFE2FF;font-weight:700}
   .badge{font-family:'Archivo Narrow',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--green-soft);color:var(--green)}
   .pprofit{flex:none;text-align:right}
   .pprofit .v{font-family:'Archivo',sans-serif;font-weight:900;font-size:21px;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
@@ -489,6 +491,7 @@ function productCard(p){
       <div class="pinfo">
         <div class="pname">${esc(p.name)}</div>
         <div class="psub"><span class="badge">${esc(p.status||'Published')}</span>${obsBadge}<span>${esc(p.brand||'')}</span><span class="sku">SKU ${esc(p.sku||'')}</span></div>
+        ${p.estsales?`<div class="psales">Est. monthly sales <b>${esc(p.estsales)}</b></div>`:''}
       </div>
       <div class="pprofit"><div class="v" data-profit>${fmtMoney(estProfit(p))}</div><div class="l">Est profit</div></div>
       <span class="chev">▶</span>
