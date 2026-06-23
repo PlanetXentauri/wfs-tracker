@@ -101,9 +101,11 @@
   .pinfo{flex:1;min-width:0}
   .pname{font-weight:600;font-size:16px;letter-spacing:-.01em}
   .psub{font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+  .psub .sku{font-weight:700;color:#FFC93C}
+  .estsales-v{font-style:italic;color:var(--violet)}
   .badge{font-family:'Archivo Narrow',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--green-soft);color:var(--green)}
   .pprofit{flex:none;text-align:right}
-  .pprofit .v{font-family:'Archivo',sans-serif;font-weight:900;font-size:21px;color:var(--violet);font-variant-numeric:tabular-nums;line-height:1}
+  .pprofit .v{font-family:'Archivo',sans-serif;font-weight:900;font-size:21px;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
   .pprofit .l{font-family:'Archivo Narrow',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--muted);margin-top:3px}
   .chev{flex:none;color:var(--muted);transition:.2s;font-size:13px}
   .prod.open .chev{transform:rotate(90deg)}
@@ -117,7 +119,7 @@
   .fld input[readonly]{opacity:.62;cursor:not-allowed;border-style:dashed}
   .badge.obs{background:var(--blue-soft);color:var(--blue)}
   .fld.calc{margin-left:0}
-  .fld .calcval{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--violet);background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:104px;text-align:right}
+  .fld .calcval{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--green);background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:104px;text-align:right}
   .eq{align-self:center;color:var(--muted);font-size:18px;padding:0 2px;margin-top:14px}
   .send{margin-left:auto;display:flex;align-items:flex-end;gap:8px;background:var(--amber-soft);border:1px solid #4a3a12;border-radius:10px;padding:9px 11px}
   .send .fld input{width:72px;border-color:#5a4716}
@@ -486,7 +488,7 @@ function productCard(p){
       <span class="${p.image?'ico haspic':'ico'}" data-ico title="${p.image?'Click to change product photo':'Click to upload a product photo'}">${p.image?`<img src="${esc(p.image)}" alt="">`:'🔋'}</span>
       <div class="pinfo">
         <div class="pname">${esc(p.name)}</div>
-        <div class="psub"><span class="badge">${esc(p.status||'Published')}</span>${obsBadge}<span>${esc(p.brand||'')}</span><span>SKU ${esc(p.sku||'')}</span></div>
+        <div class="psub"><span class="badge">${esc(p.status||'Published')}</span>${obsBadge}<span>${esc(p.brand||'')}</span><span class="sku">SKU ${esc(p.sku||'')}</span></div>
       </div>
       <div class="pprofit"><div class="v" data-profit>${fmtMoney(estProfit(p))}</div><div class="l">Est profit</div></div>
       <span class="chev">▶</span>
@@ -509,7 +511,7 @@ function productCard(p){
         <div class="kv"><span class="k">Item ID</span><span class="vv">${esc(p.itemid||'—')}</span></div>
         <div class="kv"><span class="k">GTIN</span><span class="vv">${esc(p.gtin||'—')}</span></div>
         <div class="kv"><span class="k">Condition</span><span class="vv">${esc(p.condition||'—')}</span></div>
-        <div class="kv"><span class="k">Est. monthly sales</span><span class="vv">${esc(p.estsales||'—')}</span></div>
+        <div class="kv"><span class="k">Est. monthly sales</span><span class="vv estsales-v">${esc(p.estsales||'—')}</span></div>
         <div class="kv"><span class="k">Listing score</span><span class="vv">${esc(p.listingscore||'—')}</span></div>
         <div class="kv"><span class="k">KwickMetrics profit</span><span class="vv">$${esc(p.kmprofit||'—')} <span style="color:var(--muted)">/ ${esc(p.kmperiod||'')}</span></span></div>
         <div class="kv"><span class="k">KM units · revenue</span><span class="vv">${esc(p.kmunits||'—')} · $${esc(p.kmrevenue||'—')}</span></div>
